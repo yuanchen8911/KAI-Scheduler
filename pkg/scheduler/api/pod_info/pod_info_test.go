@@ -493,6 +493,11 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			vectorMap := resource_info.NewResourceVectorMap()
+			for _, container := range append(tt.fields.Pod.Spec.InitContainers, tt.fields.Pod.Spec.Containers...) {
+				vectorMap.AddResourceList(container.Resources.Requests)
+			}
+
 			pi := &PodInfo{
 				Job:       tt.fields.Job,
 				Name:      tt.fields.Name,
@@ -501,6 +506,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 				Status:    tt.fields.Status,
 				Pod:       tt.fields.Pod,
 				GPUGroups: make([]string, 0),
+				VectorMap: vectorMap,
 			}
 			pi.updatePodAdditionalFields(tt.fields.bindingRequest)
 

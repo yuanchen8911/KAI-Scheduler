@@ -18,6 +18,7 @@ import (
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/predicates"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
@@ -1112,8 +1113,9 @@ func Test_predicatesPlugin_evaluateTaskOnPredicates(t *testing.T) {
 			}
 			skipPredicates := SkipPredicates{}
 
-			jobsMap, tasksMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.clusterData.jobs)
-			nodesMap := nodes_fake.BuildNodesInfoMap(tt.clusterData.nodes, tasksMap, nil)
+			vectorMap := resource_info.NewResourceVectorMap()
+			jobsMap, tasksMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.clusterData.jobs, vectorMap)
+			nodesMap := nodes_fake.BuildNodesInfoMap(tt.clusterData.nodes, tasksMap, nil, vectorMap)
 			task := jobsMap[tt.args.jobName].GetAllPodsMap()[tt.args.taskName]
 			job := jobsMap[tt.args.jobName]
 			node := nodesMap[tt.args.nodeName]
