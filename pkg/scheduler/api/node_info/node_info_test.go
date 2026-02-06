@@ -759,13 +759,22 @@ func runAllocatableTest(
 	nodePodAffinityInfo := pod_affinity.NewMockNodePodAffinityInfo(controller)
 	nodePodAffinityInfo.EXPECT().AddPod(Any()).Times(len(testData.podsResources))
 
-	ni := NewNodeInfo(testData.node, nodePodAffinityInfo, testVectorMapFromNode(testData.node))
+	vectorMap := testVectorMapFromNode(testData.node)
+	for _, podResources := range testData.podsResources {
+		for resourceName := range podResources {
+			vectorMap.AddResource(string(resourceName))
+		}
+	}
+	for resourceName := range testData.podResourcesToAllocate {
+		vectorMap.AddResource(string(resourceName))
+	}
+	ni := NewNodeInfo(testData.node, nodePodAffinityInfo, vectorMap)
 	for ind, podResouces := range testData.podsResources {
 		pod := common_info.BuildPod(
 			fmt.Sprintf("p%d", ind), "p1", "n1", v1.PodRunning, podResouces,
 			[]metav1.OwnerReference{}, make(map[string]string), map[string]string{})
 		addJobAnnotation(pod)
-		pi := pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+		pi := pod_info.NewTaskInfo(pod, nil, vectorMap)
 		if err := ni.AddTask(pi); err != nil {
 			t.Errorf("%s: failed to add pod %v, index: %d", testName, pi, ind)
 		}
@@ -779,7 +788,7 @@ func runAllocatableTest(
 		pod.Spec.Overhead = testData.podOverhead
 	}
 
-	task := pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+	task := pod_info.NewTaskInfo(pod, nil, vectorMap)
 	allocatable, fitErr := testedFunction(ni, task)
 	if allocatable != testData.expected {
 		t.Errorf("%s: is pod allocatable: expected %v, got %v", testName, testData.expected, allocatable)
@@ -926,6 +935,7 @@ func TestNodeInfo_isTaskAllocatableOnNonAllocatedResources(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			vectorMap := resource_info.NewResourceVectorMap()
 			ni := &NodeInfo{
 				Name:                   tt.fields.Name,
 				Node:                   tt.fields.Node,
@@ -940,8 +950,10 @@ func TestNodeInfo_isTaskAllocatableOnNonAllocatedResources(t *testing.T) {
 				PodAffinityInfo:        tt.fields.PodAffinityInfo,
 				GpuSharingNodeInfo:     tt.fields.GpuSharingNodeInfo,
 			}
+			setNodeInfoVectors(ni, vectorMap)
+			nodeNonAllocatedVector := tt.args.nodeNonAllocatedResources.ToVector(vectorMap)
 			assert.Equalf(t, tt.want,
-				ni.isTaskAllocatableOnNonAllocatedResources(tt.args.task, tt.args.nodeNonAllocatedResources),
+				ni.isTaskAllocatableOnNonAllocatedResources(tt.args.task, nodeNonAllocatedVector),
 				"isTaskAllocatableOnNonAllocatedResources(%v, %v)", tt.args.task, tt.args.nodeNonAllocatedResources)
 		})
 	}
@@ -1255,6 +1267,7 @@ func TestPredicateByNodeResourcesType_DRA(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			setNodeInfoVectors(testData.nodeInfo, resource_info.NewResourceVectorMap())
 			err := testData.nodeInfo.PredicateByNodeResourcesType(testData.task)
 			if testData.expectError {
 				assert.Error(t, err, "Should reject request")

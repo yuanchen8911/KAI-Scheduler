@@ -47,6 +47,21 @@ func NewSingleGpuVector(indexMap *ResourceVectorMap) ResourceVector {
 	return vec
 }
 
+// NewResourceVectorWithValues is a convenience function for tests only.
+func NewResourceVectorWithValues(milliCPU, memory, gpus float64, indexMap *ResourceVectorMap) ResourceVector {
+	vec := NewResourceVector(indexMap)
+	cpuIdx := indexMap.GetIndex(string(v1.ResourceCPU))
+	memIdx := indexMap.GetIndex(string(v1.ResourceMemory))
+	gpuIdx := indexMap.GetIndex(constants.GpuResource)
+	if cpuIdx < 0 || memIdx < 0 || gpuIdx < 0 {
+		panic("resource vector map missing core resource indexes")
+	}
+	vec.Set(cpuIdx, milliCPU)
+	vec.Set(memIdx, memory)
+	vec.Set(gpuIdx, gpus)
+	return vec
+}
+
 func NewResourceVectorFromResourceList(resourceList v1.ResourceList, indexMap *ResourceVectorMap) ResourceVector {
 	vec := NewResourceVector(indexMap)
 
@@ -150,7 +165,6 @@ func (m *ResourceVectorMap) AddResourceList(resourceList v1.ResourceList) {
 func (m *ResourceVectorMap) Len() int {
 	return len(m.resourceNames)
 }
-
 
 func (m *ResourceVectorMap) ResourceAt(index int) string {
 	if index < 0 || index >= len(m.resourceNames) {
