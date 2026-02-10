@@ -64,7 +64,7 @@ func RunAddRemovePodsWithStorageTests(t *testing.T, tests []AddRemovePodsTestWit
 				_ = ni.RemoveTask(pod)
 			}
 
-			setNodeInfoVectors(test.expected, test.vectorMap)
+			test.expected.VectorMap = test.vectorMap
 
 			var errors []error
 			if !nodeInfoEqual(t, test.expected, ni) {
@@ -114,12 +114,8 @@ func TestNodeInfoStorage_AddPod(t *testing.T) {
 	expectedStorageCapacity := storageCapacity.Clone()
 
 	node1ExpectedNodeInfo := &NodeInfo{
-		Name:        "n1",
-		Node:        node1,
-		Idle:        common_info.BuildResource("7000m", "9G"),
-		Used:        common_info.BuildResource("1000m", "1G"),
-		Releasing:   resource_info.EmptyResource(),
-		Allocatable: common_info.BuildResource("8000m", "10G"),
+		Name: "n1",
+		Node: node1,
 		PodInfos: map[common_info.PodID]*pod_info.PodInfo{
 			pod1Info.UID: pod1Info,
 		},
@@ -130,6 +126,11 @@ func TestNodeInfoStorage_AddPod(t *testing.T) {
 			storageCapacity.StorageClass: {expectedStorageCapacity},
 		},
 	}
+	node1ExpectedNodeInfo.VectorMap = vectorMap
+	node1ExpectedNodeInfo.AllocatableVector = common_info.BuildResource("8000m", "10G").ToVector(vectorMap)
+	node1ExpectedNodeInfo.IdleVector = common_info.BuildResource("7000m", "9G").ToVector(vectorMap)
+	node1ExpectedNodeInfo.UsedVector = common_info.BuildResource("1000m", "1G").ToVector(vectorMap)
+	node1ExpectedNodeInfo.ReleasingVector = resource_info.EmptyResource().ToVector(vectorMap)
 	for _, podInfo := range node1ExpectedNodeInfo.PodInfos {
 		node1ExpectedNodeInfo.setAcceptedResources(podInfo)
 	}

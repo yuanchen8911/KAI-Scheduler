@@ -69,17 +69,6 @@ type NodeInfo struct {
 	Name string
 	Node *v1.Node
 
-	// The releasing resource on that node (excluding shared GPUs)
-	Releasing *resource_info.Resource
-	// The idle resource on that node (excluding shared GPUs)
-	Idle *resource_info.Resource
-	// The used resource on that node, including running and terminating
-	// pods (excluding shared GPUs)
-	Used *resource_info.Resource
-
-	Allocatable *resource_info.Resource
-
-	// Vector representations of resource fields
 	AllocatableVector resource_info.ResourceVector
 	IdleVector        resource_info.ResourceVector
 	UsedVector        resource_info.ResourceVector
@@ -116,12 +105,6 @@ func NewNodeInfo(node *v1.Node, podAffinityInfo pod_affinity.NodePodAffinityInfo
 		Name: node.Name,
 		Node: node,
 
-		Releasing: resource_info.EmptyResource(),
-		Idle:      resource_info.ResourceFromResourceList(node.Status.Allocatable),
-		Used:      resource_info.EmptyResource(),
-
-		Allocatable: resource_info.ResourceFromResourceList(node.Status.Allocatable),
-
 		AllocatableVector: allocatableVector,
 		IdleVector:        idleVector,
 		UsedVector:        usedVector,
@@ -142,21 +125,15 @@ func NewNodeInfo(node *v1.Node, podAffinityInfo pod_affinity.NodePodAffinityInfo
 	numTasks := node.Status.Allocatable[v1.ResourcePods]
 	nodeInfo.MaxTaskNum = int(numTasks.Value())
 
-	capacity := resource_info.ResourceFromResourceList(node.Status.Capacity)
-	if capacity.GPUs() != nodeInfo.Allocatable.GPUs() {
+	capacityVec := resource_info.ResourceFromResourceList(node.Status.Capacity).ToVector(vectorMap)
+	gpuIdx := vectorMap.GetIndex(commonconstants.GpuResource)
+	if capacityVec.Get(gpuIdx) != allocatableVector.Get(gpuIdx) {
 		log.InfraLogger.V(2).Warnf(
 			"For node %s, the capacity and allocatable are different. Capacity %v, Allocatable %v",
-			node.Name, capacity.DetailedString(), nodeInfo.Allocatable.DetailedString())
+			node.Name, capacityVec.ToResourceQuantities(vectorMap), allocatableVector.ToResourceQuantities(vectorMap))
 	}
 
 	return nodeInfo
-}
-
-func (ni *NodeInfo) NonAllocatedResources() *resource_info.Resource {
-	nonAllocatedResource := resource_info.EmptyResource()
-	nonAllocatedResource.Add(ni.Idle)
-	nonAllocatedResource.Add(ni.Releasing)
-	return nonAllocatedResource
 }
 
 func (ni *NodeInfo) nonAllocatedVector() resource_info.ResourceVector {
@@ -489,25 +466,19 @@ func (ni *NodeInfo) addTaskResources(task *pod_info.PodInfo) {
 		task.Namespace, task.Name, task.Status, ni.Name)
 	log.InfraLogger.V(7).Infof("Node info: %+v", ni)
 
-	requestedResourceWithoutSharedGPU := getAcceptedTaskResourceWithoutSharedGPU(task)
-	requestedVector := requestedResourceWithoutSharedGPU.ToVector(ni.VectorMap)
+	requestedVector := getAcceptedTaskResourceVectorWithoutSharedGPU(task, ni.VectorMap)
 
 	// the added task will be the only one allocated on the GPU
-	ni.Used.Add(requestedResourceWithoutSharedGPU)
 	ni.UsedVector.Add(requestedVector)
 
 	switch task.Status {
 	case pod_status.Releasing:
-		ni.Releasing.Add(requestedResourceWithoutSharedGPU)
 		ni.ReleasingVector.Add(requestedVector)
-		ni.Idle.Sub(requestedResourceWithoutSharedGPU)
 		ni.IdleVector.Sub(requestedVector)
 	case pod_status.Pipelined:
-		ni.Releasing.Sub(requestedResourceWithoutSharedGPU)
 		ni.ReleasingVector.Sub(requestedVector)
 
 	default:
-		ni.Idle.Sub(requestedResourceWithoutSharedGPU)
 		ni.IdleVector.Sub(requestedVector)
 	}
 
@@ -546,24 +517,18 @@ func (ni *NodeInfo) removeTaskResources(task *pod_info.PodInfo) {
 		task.Namespace, task.Name, task.Status, ni.Name)
 	log.InfraLogger.V(7).Infof("NodeInfo: %+v", ni)
 
-	requestedResourceWithoutSharedGPU := getAcceptedTaskResourceWithoutSharedGPU(task)
-	requestedVector := requestedResourceWithoutSharedGPU.ToVector(ni.VectorMap)
+	requestedVector := getAcceptedTaskResourceVectorWithoutSharedGPU(task, ni.VectorMap)
 
 	// the removed task in the only one currently allocated on the GPU
-	ni.Used.Sub(requestedResourceWithoutSharedGPU)
 	ni.UsedVector.Sub(requestedVector)
 
 	switch task.Status {
 	case pod_status.Releasing:
-		ni.Releasing.Sub(requestedResourceWithoutSharedGPU)
 		ni.ReleasingVector.Sub(requestedVector)
-		ni.Idle.Add(requestedResourceWithoutSharedGPU)
 		ni.IdleVector.Add(requestedVector)
 	case pod_status.Pipelined:
-		ni.Releasing.Add(requestedResourceWithoutSharedGPU)
 		ni.ReleasingVector.Add(requestedVector)
 	default:
-		ni.Idle.Add(requestedResourceWithoutSharedGPU)
 		ni.IdleVector.Add(requestedVector)
 	}
 
@@ -608,7 +573,7 @@ func (ni *NodeInfo) String() string {
 	}
 
 	return fmt.Sprintf("Node (%s): idle <%v>, used <%v>, releasing <%v>, taints <%v>%s",
-		ni.Name, ni.Idle, ni.Used, ni.Releasing, ni.Node.Spec.Taints, res)
+		ni.Name, ni.IdleVector, ni.UsedVector, ni.ReleasingVector, ni.Node.Spec.Taints, res)
 
 }
 
@@ -817,9 +782,6 @@ func (ni *NodeInfo) AddDRAGPUs(draGPUs float64) {
 	if draGPUs <= 0 {
 		return
 	}
-
-	ni.Allocatable.AddGPUs(draGPUs)
-	ni.Idle.AddGPUs(draGPUs)
 
 	gpuIdx := ni.VectorMap.GetIndex(commonconstants.NvidiaGpuResource)
 	if gpuIdx >= 0 {
