@@ -21,8 +21,8 @@ DOCKER_GO_CACHING_VOLUME_AND_ENV += -e GOSUMDB=$(GOSUMDB)
 endif
 
 ## Version
-GO_VERSION=1.24.4
-GO_IMAGE_VERSION=${GO_VERSION}-bullseye
+GO_VERSION=1.26
+GO_IMAGE_VERSION=${GO_VERSION}-bookworm
 GOLANGCI_LINT_VERSION=v1.64.8
 
 ## Tool Versions
@@ -50,7 +50,7 @@ DOCKER_GO_COMMAND=${DOCKER_GO_BASE_COMMAND} builder:${GO_IMAGE_VERSION}
 DOCKER_GO_COMMAND_AMD=${DOCKER_GO_BASE_COMMAND} ${GO_ENV_ARCH_AMD} builder:${GO_IMAGE_VERSION}
 DOCKER_GO_COMMAND_ARM=${DOCKER_GO_BASE_COMMAND} ${GO_ENV_ARCH_ARM} builder:${GO_IMAGE_VERSION}
 
-DOCKER_GO_LINTER_COMMAND=${DOCKER_GO_BASE_COMMAND} -e GOFLAGS="-buildvcs=false" golangci/golangci-lint:${GOLANGCI_LINT_VERSION}
+DOCKER_GO_LINTER_COMMAND=${DOCKER_GO_BASE_COMMAND} -e GOFLAGS="-buildvcs=false" builder:${GO_IMAGE_VERSION}
 
 ifeq ($(DEBUG), 1)
 GO_BUILD_ADDITIONAL_FLAGS=-gcflags="all=-N -l"
@@ -63,9 +63,9 @@ gocache:
 	mkdir -p ${GOPATH_HOST_DIR}
 .PHONY: gocache
 
-lint-go: gocache
+lint-go: gocache builder
 	@ ${ECHO_COMMAND} ${GREEN_CONSOLE} "${CONSOLE_PREFIX} Running golangci linter" ${BASE_CONSOLE}
-	${DOCKER_GO_LINTER_COMMAND} golangci-lint run -v -c ${GOLANG_LINTER_CONFIG_PATH} || ${FAILURE_MESSAGE_HANDLER}
+	${DOCKER_GO_LINTER_COMMAND} sh -c "go install github.com/golangci/golangci-lint/cmd/golangci-lint@${GOLANGCI_LINT_VERSION} && /go/bin/golangci-lint run -v -c ${GOLANG_LINTER_CONFIG_PATH}" || ${FAILURE_MESSAGE_HANDLER}
 	${SUCCESS_MESSAGE_HANDLER}
 .PHONY: lint-go
 
